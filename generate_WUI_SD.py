@@ -7,7 +7,9 @@ from arcpy.sa import *
 
 arcpy.CheckOutExtension("Spatial") # Check out ArcGIS Spatial Analyst extension license
 env.overwriteOutput = True # Allow files to be overwritten
-#Change env.workspace, space, and study_area file paths and then the program should run
+NAD_1983_2011_SP_Montana = arcpy.SpatialReference(6514) # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
+
+# Change env.workspace, space, and study_area file paths and then the program should run
 #############################################################################################################
 env.workspace = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
 space = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
@@ -22,18 +24,19 @@ nlcd = data + "San_Diego_NLCD_2016_Land.tif"
 nlcd_table = data + "San_Diego_NLCD_2016_Land.dbf"
 
 
-# Here it is essential to choose a field (column) that has values "1", because it is the value that will take as the  number of houses. 
+# Here it is essential to choose a field (column) that has values "1", because it is the value that will take as the number of houses. 
 #############################################################################################################
 
 def waterRaster(n):
     outRas = Con(nlcd, 0, 1, "Value = 11")
     outRas.save(temp + "waterRaster.tif")
+    print("Water raster completed.")
    
 
 def wildlandBaseRaster(n):
     outRas = Con(nlcd, 1, 0, "Value = 41 OR Value = 42 OR Value = 43 OR Value = 52 OR Value = 71 OR Value = 81")
     outRas.save(temp + "wildveg.tif")
-    print ("wildland base raster done")
+    print("Wildland base raster completed.")
 
     
 def findWildlandAreas(n):
@@ -63,33 +66,33 @@ def findWildlandAreas(n):
     farcover = temp + "farcover"
     outcon = Con(IsNull(farcover), 0, temp + "farcover")
     outcon.save(temp + "wildveg_buffer.tif")
-    print ("find wildland areas done")
+    print("Wildland areas completed.")
 
 def footprintCentroids(n):
     arcpy.FeatureToPoint_management(Houses,temp + "housesCentroids.shp")
+    print("Footprint centroids completed.")
    
-
+# NEED TO CONVERT CENTROIDS TO PROPER COORDINATE SYSTEM
 def makeNeighborhoods(n):
     nbrHouses = PointStatistics(temp + "housesCentroids.shp", "value1", 30, NbrCircle(n, "MAP"), "SUM")
     nbrHouses.save(temp + "nbrHouses" + str(n) + ".tif")
+    print("House counting completed.")
     
 
 def neighborhoodDensity(n):
     houseDen = ((arcpy.Raster(temp + "nbrHouses" + str(n) + ".tif") / (3.14 * float(n) * float(n))) * 1000000) > 6.17
     houseDen.save(temp + "houseDen" + str(n) + ".tif")
+    print("Neighborhood density completed.")
     
 
 def replaceNoData(n):
     outCon = Con(IsNull(temp + "houseDen" + str(n) + ".tif"), 0, temp + "houseDen" + str(n) + ".tif")
     outCon.save(temp + "outCon" + str(n) + ".tif")
+    print("Finished replacing nulls in neigborhood density.")
     
 
 def removeWater(n):
-    print("Input raster exists:", Raster(temp + "outCon" + str(n) + ".tif").isInteger)
-    print("Water raster exists:", Raster(temp + "waterRaster.tif").isInteger)
-
     denNoWater = Raster(temp + "outCon" + str(n) + ".tif") * Raster(temp + "waterRaster.tif")
-
     # used instead of .save()
     arcpy.management.CopyRaster(
         denNoWater,
@@ -98,6 +101,7 @@ def removeWater(n):
         nodata_value="0",
         format="TIFF"
     )
+    print("Finished removing water areas from housing density raster.")
    
 
 def calcWildlandCover(n):
@@ -135,21 +139,25 @@ def calcWUI(n):
     )
     arcpy.RasterToPolygon_conversion(output+"wui_map_" + str(n) + ".tif", temp+"wui_polig_" + str(n) + ".shp", "NO_SIMPLIFY", "VALUE")
     arcpy.Clip_analysis(temp+"wui_polig_" + str(n)+".shp", study_area, output+"wui_polig_" + str(n) + ".shp")
-    print ("wui calculated")
+    print ("WUI map at " + str(n) + "m neighborhood buffer size completed.")
 
     
 
 
 if __name__ == "__main__":
-    for n in range(100,200, 100):
-        if(n == 100):
-            waterRaster(n)
-            wildlandBaseRaster(n)
-            footprintCentroids(n)
-            findWildlandAreas(n)
-        makeNeighborhoods(n)
-        neighborhoodDensity(n)
-        replaceNoData(n)
-        removeWater(n)
-        calcWildlandCover(n)
-        calcWUI(n)
+    # setting neighborhood buffer size to 500m. later on, will iterate from 100m to 1000m.
+    n = 500
+
+    # only need to run once
+    waterRaster(n)
+    wildlandBaseRaster(n)
+    footprintCentroids(n)
+    findWildlandAreas(n)
+
+    # run for each neighborhood buffer size
+    makeNeighborhoods(n)
+    neighborhoodDensity(n)
+    replaceNoData(n)
+    removeWater(n)
+    calcWildlandCover(n)
+    calcWUI(n)

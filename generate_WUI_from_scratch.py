@@ -40,7 +40,7 @@ print("NLCD raster clipping completed.")
 
 # extract centroids from building footprint polygons
 # project polygons to NAD 1983 UTM Zone 12N
-utm_12n = arcpy.SpatialReference(26912)
+utm_12n = arcpy.SpatialReference(6514)
 arcpy.Project_management(
     in_dataset=input_building_footprints,
     out_dataset=projected_building_footprints,
