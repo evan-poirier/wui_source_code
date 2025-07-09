@@ -7,21 +7,62 @@ from arcpy.sa import *
 
 arcpy.CheckOutExtension("Spatial") # Check out ArcGIS Spatial Analyst extension license
 env.overwriteOutput = True # Allow files to be overwritten
-NAD_1983_2011_SP_Montana = arcpy.SpatialReference(6514) # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
+desired_factory_code = 6514                             # Factory code for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
+NAD_1983_2011_SP_Montana = arcpy.SpatialReference(desired_factory_code) # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
 
 # Change env.workspace, space, and study_area file paths and then the program should run
 #############################################################################################################
 env.workspace = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
 space = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
+
 output = space + "\\output\\" 
 temp = space + "\\temp\\"
 data = space + "\\data\\"
-Houses = data + "houses1.shp" # point, housing locations; be sure that there is a field called "value1" where all points have 1 assigned to this column
+
+Houses = data + "2020_address_points\\SiteStructureAddressPoints.shp" # point, housing locations; be sure that there is a field called "value1" where all points have 1 assigned to this column
 Water = temp + "waterRaster.tif" # polygon, waterbodies; '0' for unbuildable and '1' for areas where houses can be built
 WildlandBase = temp + "wildveg.tif" # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
-study_area = data + "San_Diego_Boundary.shp" # shapefile of study area to clip final product
-nlcd = data + "San_Diego_NLCD_2016_Land.tif"
-nlcd_table = data + "San_Diego_NLCD_2016_Land.dbf"
+state_boundary = data + "state_boundary\\StateofMontana.shp" 
+study_area = data + "buffered_state_boundary\\StateofMontanaBuffered.shp" # shapefile of study area to clip final product
+nlcd = data + "clipped_projected_2016_NLCD\\clipped_projected_2016_NLCD.tif"
+# nlcd_table = data + "San_Diego_NLCD_2016_Land.dbf"    # was in the SD code but not sure if needed.
+
+projected_objects = [Houses, study_area, nlcd]
+
+
+# Buffer and clip NLCD, ensure valid projections for houses, NLCD, and state boundary
+#############################################################################################################
+
+def bufferBoundary():
+    # buffer distance
+    buffer_distance = "5 Kilometers"
+
+    # buffer analysis
+    arcpy.Buffer_analysis(
+        in_features=state_boundary,
+        out_feature_class=study_area,
+        buffer_distance_or_field=buffer_distance,
+        line_side="FULL",
+        line_end_type="ROUND",
+        dissolve_option="ALL",
+        dissolve_field=""
+    )
+
+    print("Boundary buffer completed.")
+
+def clipNLCD():
+    clipped_NLCD_raster = ExtractByMask(nlcd, study_area)
+    clipped_NLCD_raster.save(data + "clipped_projected_2016_NLCD.tif")
+    print("NLCD raster clipping completed.")
+
+def checkProjections():
+    for projected_object in projected_objects:
+        description = arcpy.Describe(projected_object)
+        spatial_ref = description.spatialReference
+        if spatial_ref.factoryCode != desired_factory_code:
+            print(description.name + " needs to be reprojected.")
+        else:
+            print(description.name + " does not need to be reprojected.")
 
 
 # Here it is essential to choose a field (column) that has values "1", because it is the value that will take as the number of houses. 
@@ -72,7 +113,6 @@ def footprintCentroids(n):
     arcpy.FeatureToPoint_management(Houses,temp + "housesCentroids.shp")
     print("Footprint centroids completed.")
    
-# NEED TO CONVERT CENTROIDS TO PROPER COORDINATE SYSTEM
 def makeNeighborhoods(n):
     nbrHouses = PointStatistics(temp + "housesCentroids.shp", "value1", 30, NbrCircle(n, "MAP"), "SUM")
     nbrHouses.save(temp + "nbrHouses" + str(n) + ".tif")
@@ -148,13 +188,16 @@ if __name__ == "__main__":
     # setting neighborhood buffer size to 500m. later on, will iterate from 100m to 1000m.
     n = 500
 
-    # only need to run once
+    # prepare input data - run once
+    checkProjections()
+
+    # generate centroids, water, and wildland areas - run once
     waterRaster(n)
     wildlandBaseRaster(n)
     footprintCentroids(n)
     findWildlandAreas(n)
 
-    # run for each neighborhood buffer size
+    # calculate WUI - run for each neighborhood buffer size
     makeNeighborhoods(n)
     neighborhoodDensity(n)
     replaceNoData(n)
