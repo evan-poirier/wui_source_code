@@ -1,43 +1,71 @@
-# Script for creating detailed WUI map using building footprint data and the NLCD map.
+# To-Do
+#############################################################################################################
+
+# Replicate Ketchpaw 2022 WUI-P map (2016 NLCD, 2020 address points)
+    # Re-buffer state boundary to 100m before continuing
+
+# Alter functions to iterate through each year
+
+
+# About
+#############################################################################################################
+
+# Script adapted from original code by Dr. Dapeng Li in the Department of Geography and the Environment at the University of Alabama.
+# This script generates WUI maps using the moving window method introduced by Bar-Massada, et. al.
+# Inputs: NLCD raster data, building polygon or point data, and a boundary polygon.
+# See 'settings' and 'paths' sections before running program.
+
+
+# Imports
+#############################################################################################################
 import os
 import sys, string 
 import arcpy
 from arcpy import env
 from arcpy.sa import *
 
-arcpy.CheckOutExtension("Spatial") # Check out ArcGIS Spatial Analyst extension license
-env.overwriteOutput = True # Allow files to be overwritten
-desired_factory_code = 6514                             # Factory code for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
-NAD_1983_2011_SP_Montana = arcpy.SpatialReference(desired_factory_code) # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
 
-# Change env.workspace, space, and study_area file paths and then the program should run
+# Settings
 #############################################################################################################
-env.workspace = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
-space = r"C:\Users\Cheryl\Documents\montana_wui_mapping" # Make sure all other input files are in this folder!
+arcpy.CheckOutExtension("Spatial")                                          # Check out ArcGIS Spatial Analyst extension license
+env.overwriteOutput = True                                                  # Allow files to be overwritten
+projection_factory_code = 6514                                              # Factory code for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
+NAD_1983_2011_SP_Montana = arcpy.SpatialReference(projection_factory_code)  # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
+env.workspace = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"         # Make sure all input files are in this folder
+n = 500                                                                     # Set neighborhood buffer size
+
+
+# Paths
+#############################################################################################################
+space = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"     # Make sure all other input files are in this folder!
 
 output = space + "\\output\\" 
 temp = space + "\\temp\\"
 data = space + "\\data\\"
 
-Houses = data + "2020_address_points\\SiteStructureAddressPoints.shp" # point, housing locations; be sure that there is a field called "value1" where all points have 1 assigned to this column
-Water = temp + "waterRaster.tif" # polygon, waterbodies; '0' for unbuildable and '1' for areas where houses can be built
-WildlandBase = temp + "wildveg.tif" # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
-state_boundary = data + "state_boundary\\StateofMontana.shp" 
-study_area = data + "buffered_state_boundary\\StateofMontanaBuffered.shp" # shapefile of study area to clip final product
-nlcd = data + "clipped_projected_2016_NLCD\\clipped_projected_2016_NLCD.tif"
-# nlcd_table = data + "San_Diego_NLCD_2016_Land.dbf"    # was in the SD code but not sure if needed.
+address_points = data + "\\address_points\\"
+boundaries = data + "\\boundaries\\"
+boundaries_raw = boundaries + "\\boundaries_raw\\"
+boundaries_buffered = boundaries + "\\boundaries_buffered\\"
+nlcd = data + "\\nlcd\\"
+nlcd_processed = nlcd + "\\nlcd_processed\\"
+nlcd_raw = nlcd + "\\nlcd_raw\\"
+misc = data + "\\misc\\"
 
-projected_objects = [Houses, study_area, nlcd]
 
-
-# Buffer and clip NLCD, ensure valid projections for houses, NLCD, and state boundary
+# Other global variables
 #############################################################################################################
+houses = address_points + "2020_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
+wildland_base = temp + "wildveg.tif"                                                # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
+state_boundary = boundaries_raw + "StateofMontana.shp"                              # state boundary before buffering
+study_area = boundaries_buffered + "StateofMontanaBuffered.shp"                     # shapefile of study area to clip final product
+nlcd_2016 = nlcd_processed + "clipped_projected_2016_NLCD.tif"                      # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
 
+
+# Data preparation functions
+#############################################################################################################
 def bufferBoundary():
-    # buffer distance
-    buffer_distance = "5 Kilometers"
-
-    # buffer analysis
+    buffer_distance = "100 meters"
     arcpy.Buffer_analysis(
         in_features=state_boundary,
         out_feature_class=study_area,
@@ -47,27 +75,28 @@ def bufferBoundary():
         dissolve_option="ALL",
         dissolve_field=""
     )
-
     print("Boundary buffer completed.")
+
 
 def clipNLCD():
     clipped_NLCD_raster = ExtractByMask(nlcd, study_area)
     clipped_NLCD_raster.save(data + "clipped_projected_2016_NLCD.tif")
     print("NLCD raster clipping completed.")
 
+# Make sure that NLCD raster, boundary, and house polygons/points are using the desired projection
 def checkProjections():
+    projected_objects = [houses, study_area, nlcd, raw_nlcd]
     for projected_object in projected_objects:
         description = arcpy.Describe(projected_object)
         spatial_ref = description.spatialReference
-        if spatial_ref.factoryCode != desired_factory_code:
-            print(description.name + " needs to be reprojected.")
+        if spatial_ref.factoryCode != projection_factory_code:
+            print(description.name + " has factory code of " + str(spatial_ref.factoryCode) + " and needs to be reprojected.")
         else:
             print(description.name + " does not need to be reprojected.")
 
 
-# Here it is essential to choose a field (column) that has values "1", because it is the value that will take as the number of houses. 
+# WUI generation functions
 #############################################################################################################
-
 def waterRaster(n):
     outRas = Con(nlcd, 0, 1, "Value = 11")
     outRas.save(temp + "waterRaster.tif")
@@ -81,7 +110,7 @@ def wildlandBaseRaster(n):
 
     
 def findWildlandAreas(n):
-    inRas = WildlandBase
+    inRas = wildland_base
     polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly", "NO_SIMPLIFY", "Value")
     polys2 = polys
     arcpy.AddField_management(polys, "value", "SHORT")
@@ -109,10 +138,12 @@ def findWildlandAreas(n):
     outcon.save(temp + "wildveg_buffer.tif")
     print("Wildland areas completed.")
 
+
 def footprintCentroids(n):
-    arcpy.FeatureToPoint_management(Houses,temp + "housesCentroids.shp")
+    arcpy.FeatureToPoint_management(houses, temp + "housesCentroids.shp")
     print("Footprint centroids completed.")
-   
+
+
 def makeNeighborhoods(n):
     nbrHouses = PointStatistics(temp + "housesCentroids.shp", "value1", 30, NbrCircle(n, "MAP"), "SUM")
     nbrHouses.save(temp + "nbrHouses" + str(n) + ".tif")
@@ -133,11 +164,10 @@ def replaceNoData(n):
 
 def removeWater(n):
     denNoWater = Raster(temp + "outCon" + str(n) + ".tif") * Raster(temp + "waterRaster.tif")
-    # used instead of .save()
     arcpy.management.CopyRaster(
         denNoWater,
         temp + "denNoWater" + str(n) + ".tif",
-        pixel_type="32_BIT_FLOAT",      # may need to change
+        pixel_type="32_BIT_FLOAT",      # May need to change this
         nodata_value="0",
         format="TIFF"
     )
@@ -145,9 +175,9 @@ def removeWater(n):
    
 
 def calcWildlandCover(n):
-    NbrCover = FocalStatistics(arcpy.Raster(WildlandBase), NbrCircle(int(n), "MAP"), "SUM")
+    NbrCover = FocalStatistics(arcpy.Raster(wildland_base), NbrCircle(int(n), "MAP"), "SUM")
     NbrCover.save(temp + "nbrcover" + str(n) + ".tif")
-    NbrCoverZero = FocalStatistics(EqualTo(arcpy.Raster(WildlandBase),0), NbrCircle(int(n), "MAP"), "SUM")
+    NbrCoverZero = FocalStatistics(EqualTo(arcpy.Raster(wildland_base),0), NbrCircle(int(n), "MAP"), "SUM")
     sumCover = NbrCover+NbrCoverZero
     sumCover.save(temp + "sumCover_" + str(n) + ".tif")
     wildcover = float(1)*NbrCover/(NbrCover+NbrCoverZero)
@@ -158,22 +188,20 @@ def calcWildlandCover(n):
 
 def calcWUI(n):
     IMWui = Con((Raster(temp+"denNoWater" + str(n) + ".tif") == 1) & (Raster(temp + "wildcover50_" + str(n) + ".tif") == 1), 1 , 0)
-    # used instead of IMWui.save()
     arcpy.management.CopyRaster(
         IMWui,
         output + "imwui" + str(n) + ".tif",
-        pixel_type="8_BIT_UNSIGNED",      # may need to change
+        pixel_type="8_BIT_UNSIGNED",      # May need to change this
         nodata_value="0",
         format="TIFF"
     )
     IFWui = Raster(temp+"denNoWater" + str(n) + ".tif") * Raster(temp + "wildveg_buffer.tif")
     IFWui.save(output+"ifwui" + str(n) + ".tif")
     Wui = Con(IMWui == 1, 1, Con(IFWui == 1, 2 , 0))
-    # used instead of Wui.save()
     arcpy.management.CopyRaster(
         Wui,
         output + "wui_map_" + str(n) + ".tif",
-        pixel_type="8_BIT_UNSIGNED",      # may need to change
+        pixel_type="8_BIT_UNSIGNED",      # May need to change this
         nodata_value="0",
         format="TIFF"
     )
@@ -182,25 +210,22 @@ def calcWUI(n):
     print ("WUI map at " + str(n) + "m neighborhood buffer size completed.")
 
     
-
-
+# Main
+#############################################################################################################
 if __name__ == "__main__":
-    # setting neighborhood buffer size to 500m. later on, will iterate from 100m to 1000m.
-    n = 500
-
     # prepare input data - run once
     checkProjections()
 
-    # generate centroids, water, and wildland areas - run once
-    waterRaster(n)
-    wildlandBaseRaster(n)
-    footprintCentroids(n)
-    findWildlandAreas(n)
+    # # generate centroids, water, and wildland areas - run once
+    # waterRaster(n)
+    # wildlandBaseRaster(n)
+    # footprintCentroids(n)
+    # findWildlandAreas(n)
 
-    # calculate WUI - run for each neighborhood buffer size
-    makeNeighborhoods(n)
-    neighborhoodDensity(n)
-    replaceNoData(n)
-    removeWater(n)
-    calcWildlandCover(n)
-    calcWUI(n)
+    # # calculate WUI - run for each neighborhood buffer size
+    # makeNeighborhoods(n)
+    # neighborhoodDensity(n)
+    # replaceNoData(n)
+    # removeWater(n)
+    # calcWildlandCover(n)
+    # calcWUI(n)
