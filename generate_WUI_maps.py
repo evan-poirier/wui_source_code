@@ -2,7 +2,8 @@
 #############################################################################################################
 
 # Replicate Ketchpaw 2022 WUI-P map (2016 NLCD, 2020 address points)
-    # Re-buffer state boundary to 100m before continuing
+
+# Move all files from 1-time run to archive folder
 
 # Alter functions to iterate through each year
 
@@ -37,29 +38,34 @@ n = 500                                                                     # Se
 
 # Paths
 #############################################################################################################
+# workspace
 space = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"     # Make sure all other input files are in this folder!
 
+# main folders
 output = space + "\\output\\" 
 temp = space + "\\temp\\"
-data = space + "\\data\\"
+downloads = space + "\\data\\downloads\\"
+prepared = space + "\\data\\prepared\\"
+misc = space + "\\data\\misc\\"
 
-address_points = data + "\\address_points\\"
-boundaries = data + "\\boundaries\\"
-boundaries_raw = boundaries + "\\boundaries_raw\\"
-boundaries_buffered = boundaries + "\\boundaries_buffered\\"
-nlcd = data + "\\nlcd\\"
-nlcd_processed = nlcd + "\\nlcd_processed\\"
-nlcd_raw = nlcd + "\\nlcd_raw\\"
-misc = data + "\\misc\\"
+# raw downloads
+address_point_downloads = downloads + "\\address_point_downloads\\"
+boundary_downloads = downloads + "\\boundary_downloads\\"
+nlcd_downloads = downloads + "\\nlcd_downloads\\"
+
+# prepared data
+address_points = prepared + "\\address_points\\"
+study_areas = prepared + "\\study_area\\"
+nlcd = prepared + "\\nlcd\\"
+
 
 
 # Other global variables
 #############################################################################################################
 houses = address_points + "2020_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
 wildland_base = temp + "wildveg.tif"                                                # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
-state_boundary = boundaries_raw + "StateofMontana.shp"                              # state boundary before buffering
-study_area = boundaries_buffered + "StateofMontanaBuffered.shp"                     # shapefile of study area to clip final product
-nlcd_2016 = nlcd_processed + "clipped_projected_2016_NLCD.tif"                      # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
+study_area = study_areas + "StateofMontanaBuffered.shp"                             # shapefile of study area to clip final product
+nlcd_2016 = nlcd + "nlcd_2016_processed\\clipped_projected_2016_NLCD.tif"           # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
 
 
 # Data preparation functions
@@ -79,13 +85,13 @@ def bufferBoundary():
 
 
 def clipNLCD():
-    clipped_NLCD_raster = ExtractByMask(nlcd, study_area)
+    clipped_NLCD_raster = ExtractByMask(nlcd_2016, study_area)
     clipped_NLCD_raster.save(data + "clipped_projected_2016_NLCD.tif")
     print("NLCD raster clipping completed.")
 
 # Make sure that NLCD raster, boundary, and house polygons/points are using the desired projection
 def checkProjections():
-    projected_objects = [houses, study_area, nlcd, raw_nlcd]
+    projected_objects = [houses, study_area, nlcd_2016]
     for projected_object in projected_objects:
         description = arcpy.Describe(projected_object)
         spatial_ref = description.spatialReference
@@ -94,21 +100,39 @@ def checkProjections():
         else:
             print(description.name + " does not need to be reprojected.")
 
+# Ensure proper 'value1' field for housing file
+def addValue1():
+    # Check if 'value1' field already exists, add it if not
+    fields = [field.name for field in arcpy.ListFields(houses)]
+    if "value1" not in fields:
+        arcpy.AddField_management(houses, "value1", "SHORT")
+        print("Housing shapefile did not have value1 field, added it.")
+    else:
+        print("Housing shapefile already has value1 field.")
+
+    # Set value1 = 1 for all rows
+    with arcpy.da.UpdateCursor(houses, ["value1"]) as cursor:
+        for row in cursor:
+            row[0] = 1
+            cursor.updateRow(row)
+    print("Set value1 = 1 for all rows in housing shapefile.")
+
 
 # WUI generation functions
 #############################################################################################################
 def waterRaster(n):
-    outRas = Con(nlcd, 0, 1, "Value = 11")
+    outRas = Con(nlcd_2016, 0, 1, "Value = 11")
     outRas.save(temp + "waterRaster.tif")
     print("Water raster completed.")
    
 
 def wildlandBaseRaster(n):
-    outRas = Con(nlcd, 1, 0, "Value = 41 OR Value = 42 OR Value = 43 OR Value = 52 OR Value = 71 OR Value = 81")
+    outRas = Con(nlcd_2016, 1, 0, "Value = 41 OR Value = 42 OR Value = 43 OR Value = 52 OR Value = 71 OR Value = 81")
     outRas.save(temp + "wildveg.tif")
     print("Wildland base raster completed.")
 
-    
+
+# Old findWildlandAreas function    
 def findWildlandAreas(n):
     inRas = wildland_base
     polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly", "NO_SIMPLIFY", "Value")
@@ -213,19 +237,20 @@ def calcWUI(n):
 # Main
 #############################################################################################################
 if __name__ == "__main__":
-    # prepare input data - run once
+    # insert data preparation functions here as needed
     checkProjections()
 
-    # # generate centroids, water, and wildland areas - run once
+    # generate centroids, water, and wildland areas - run once
     # waterRaster(n)
     # wildlandBaseRaster(n)
     # footprintCentroids(n)
     # findWildlandAreas(n)
 
-    # # calculate WUI - run for each neighborhood buffer size
-    # makeNeighborhoods(n)
-    # neighborhoodDensity(n)
-    # replaceNoData(n)
-    # removeWater(n)
-    # calcWildlandCover(n)
-    # calcWUI(n)
+    # calculate WUI - run for each neighborhood buffer size
+    footprintCentroids(n)           # redundant, but going to leave in so that the script would work the same with footprints or address points
+    makeNeighborhoods(n)
+    neighborhoodDensity(n)
+    replaceNoData(n)
+    removeWater(n)
+    calcWildlandCover(n)
+    calcWUI(n)
