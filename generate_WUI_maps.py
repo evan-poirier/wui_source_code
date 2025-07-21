@@ -34,6 +34,7 @@ projection_factory_code = 6514                                              # Fa
 NAD_1983_2011_SP_Montana = arcpy.SpatialReference(projection_factory_code)  # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
 env.workspace = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"         # Make sure all input files are in this folder
 n = 500                                                                     # Set neighborhood buffer size
+arcpy.env.cellSize = 30                                                     # Set default raster cell size to 30m
 
 
 # Paths
@@ -58,14 +59,15 @@ address_points = prepared + "\\address_points\\"
 study_areas = prepared + "\\study_area\\"
 nlcd = prepared + "\\nlcd\\"
 
+# temp objects
+wildland_base = temp + "wildveg.tif"                                                # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
 
 
 # Other global variables
 #############################################################################################################
-houses = address_points + "2020_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
-wildland_base = temp + "wildveg.tif"                                                # binary raster, wildland vegetation ('1' for veg that can carry fire, '0' otherwise)
+houses = address_points + "ketchpaw_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
 study_area = study_areas + "StateofMontanaBuffered.shp"                             # shapefile of study area to clip final product
-nlcd_2016 = nlcd + "nlcd_2016_processed\\clipped_projected_2016_NLCD.tif"           # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
+nlcd_2016 = nlcd + "ketchpaw_nlcd\\clipped_projected_2016_NLCD.tif"           # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
 
 
 # Data preparation functions
@@ -131,8 +133,7 @@ def wildlandBaseRaster(n):
     outRas.save(temp + "wildveg.tif")
     print("Wildland base raster completed.")
 
-
-# Old findWildlandAreas function    
+ 
 def findWildlandAreas(n):
     inRas = wildland_base
     polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly", "NO_SIMPLIFY", "Value")
@@ -240,14 +241,14 @@ if __name__ == "__main__":
     # insert data preparation functions here as needed
     checkProjections()
 
-    # generate centroids, water, and wildland areas - run once
-    # waterRaster(n)
-    # wildlandBaseRaster(n)
-    # footprintCentroids(n)
-    # findWildlandAreas(n)
+    # generate centroids, water, and wildland areas - run once per year
+    waterRaster(n)
+    wildlandBaseRaster(n)
+    footprintCentroids(n)
+    findWildlandAreas(n)
 
     # calculate WUI - run for each neighborhood buffer size
-    footprintCentroids(n)           # redundant, but going to leave in so that the script would work the same with footprints or address points
+    footprintCentroids(n)
     makeNeighborhoods(n)
     neighborhoodDensity(n)
     replaceNoData(n)
