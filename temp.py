@@ -248,13 +248,10 @@ def calcWUI(n):
 
 
 def createMaps(map_name, buffer):
-    # define housing polygons and vegetation raster
-    curr_address_points = address_points + "ketchpaw_address_points\\SiteStructureAddressPoints.shp"
-    curr_nlcd = nlcd_projected + "nlcd_2016_p.tif"
-
     # data and directory prep
     clearTempDirectory()
     checkProjections(map_name)
+    clipNLCD(map_name)
 
     # generate centroids, water, and wildland areas - run for each year
     waterRaster(map_name)
@@ -275,14 +272,6 @@ def createMaps(map_name, buffer):
 # Main
 #############################################################################################################
 if __name__ == "__main__":
-    # define housing polygons and vegetation raster
-    curr_address_points = address_points + "ketchpaw_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
-    curr_nlcd = nlcd_projected + "nlcd_2016_p.tif"                                                       # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
-    
-    curr_map = "Ketchpaw"
-    curr_buffer = 500
-
-    try:
-        createMaps(curr_map, curr_buffer)
-    except Exception as e:
-        print(f"An error occurred while creating {curr_map} at {curr_buffer}m buffer distance: {e}")
+    for year in range(2012, 2025):
+        curr_nlcd = nlcd_projected + f"nlcd_{year}_p.tif"
+        clipNLCD(year)
