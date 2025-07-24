@@ -56,10 +56,9 @@ wildland_base = temp + "wildveg.tif"                                            
 study_area = study_areas + "StateofMontanaBuffered.shp"                             # shapefile of study area to clip final product
 
 
-# Other global variables
+# Global variables
 #############################################################################################################
-curr_address_points = address_points
-curr_nlcd = nlcd_projected
+global curr_address_points, curr_nlcd
 
 
 # Previously used functions
@@ -249,15 +248,20 @@ def calcWUI(n):
 
 def createMaps(map_name, buffer):
     # define housing polygons and vegetation raster
-    curr_address_points = address_points + "ketchpaw_address_points\\SiteStructureAddressPoints.shp"
-    curr_nlcd = nlcd_projected + "nlcd_2016_p.tif"
+    if (map_name == "Ketchpaw Flathead"):
+        curr_address_points = address_points + "Flathead_2020_address_points.shp"
+        curr_nlcd = nlcd_projected_clipped + "nlcd_flathead.tif"
+    else:
+        print(f"Cannot create {map_name}, no data specified.")
+        return
+    print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
     # data and directory prep
     clearTempDirectory()
     checkProjections(map_name)
 
     # generate centroids, water, and wildland areas - run for each year
-    waterRaster(map_name)
+    waterRaster(map_name) 
     wildlandBaseRaster(buffer)
     footprintCentroids(buffer)
     findWildlandAreas(buffer)
@@ -279,7 +283,7 @@ if __name__ == "__main__":
     curr_address_points = address_points + "ketchpaw_address_points\\SiteStructureAddressPoints.shp"     # point, housing locations; must have 'value1' field with all values = 1
     curr_nlcd = nlcd_projected + "nlcd_2016_p.tif"                                                       # 2016 NLCD, set to MSL address point projection and clipped to buffered state boundary
     
-    curr_map = "Ketchpaw"
+    curr_map = "Ketchpaw Flathead"
     curr_buffer = 500
 
     try:
