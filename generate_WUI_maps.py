@@ -35,14 +35,14 @@ space = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"     # Make sure all 
 # main folders
 output = space + "\\output\\" 
 temp = space + "\\temp\\"
-downloads = space + "\\data\\downloads\\"
+raw = space + "\\data\\raw\\"
 prepared = space + "\\data\\prepared\\"
 misc = space + "\\data\\misc\\"
 
-# raw downloads
-address_point_downloads = downloads + "\\address_point_downloads\\"
-boundary_downloads = downloads + "\\boundary_downloads\\"
-nlcd_downloads = downloads + "\\nlcd_downloads\\"
+# raw data
+address_point_downloads = raw + "\\address_point_downloads\\"
+boundary_downloads = raw + "\\boundary_downloads\\"
+nlcd_downloads = raw + "\\nlcd_downloads\\"
 
 # prepared data
 address_points = prepared + "\\address_points\\"
@@ -67,10 +67,22 @@ def bufferBoundary():
     )
     print("Boundary buffer completed.")
 
+def projectNLCDRaster():
+    arcpy.management.ProjectRaster(
+        in_raster="NLCD_2016_Land_Cover_L48_20190424.img",
+        out_raster=r"C:\Users\Cheryl\Documents\ArcGIS\Projects\WUI Workspace\WUI Workspace.gdb\NLCD_2016_Land_ProjectRaster1",
+        out_coor_system='PROJCS["NAD_1983_2011_StatePlane_Montana_FIPS_2500",GEOGCS["GCS_NAD_1983_2011",DATUM["D_NAD_1983_2011",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["False_Easting",600000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-109.5],PARAMETER["Standard_Parallel_1",45.0],PARAMETER["Standard_Parallel_2",49.0],PARAMETER["Latitude_Of_Origin",44.25],UNIT["Meter",1.0]]',
+        resampling_type="NEAREST",
+        cell_size="30 30",
+        geographic_transform="WGS_1984_(ITRF08)_To_NAD_1983_2011",
+        Registration_Point=None,
+        in_coor_system='PROJCS["Albers_Conical_Equal_Area",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Albers"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-96.0],PARAMETER["Standard_Parallel_1",29.5],PARAMETER["Standard_Parallel_2",45.5],PARAMETER["Latitude_Of_Origin",23.0],UNIT["Meter",1.0]]',
+        vertical="NO_VERTICAL"
+    )
 
 def clipNLCD(map_name):
     clipped_NLCD_raster = ExtractByMask(curr_nlcd, study_area)
-    clipped_NLCD_raster.save(nlcd_projected_clipped + "nlcd_{map_name}_pc.tif")
+    clipped_NLCD_raster.save(nlcd_projected_clipped + "nlcd_" + str(map_name) + "_pc.tif")
     print(f"{map_name}: NLCD raster clipping completed.")
 
 
@@ -125,23 +137,27 @@ def addValue1(map_name, curr_address_points):
 # WUI generation functions
 #############################################################################################################
 def waterRaster(map_name, curr_nlcd):
-    outRas = Con(curr_nlcd, 1, 0, "Value = 11")
+    outRas = Con(curr_nlcd, 0, 1, "Value = 11")
     outRas.save(temp + "waterRaster.tif")
     print(f"{map_name}: water raster completed.")
    
 
 def wildlandBaseRaster(map_name, curr_nlcd):
-    outRas = Con(curr_nlcd, 1, 0, "Value = 41 OR Value = 42 OR Value = 43 OR Value = 52 OR Value = 71 OR Value = 81")
+    outRas = Con(curr_nlcd, 1, 0, "Value = 41 OR Value = 42 OR Value = 43 OR Value = 52 OR Value = 71 OR Value = 90 OR Value = 95")
     outRas.save(temp + "wildveg.tif")
     print(f"{map_name}: wildland base raster completed.")
 
  
 def findWildlandAreas(map_name):
+    
     inRas = temp + "wildveg.tif"
     polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly", "NO_SIMPLIFY", "Value")
+    
     polys2 = polys
     arcpy.AddField_management(polys, "value", "SHORT")
+    
     arcpy.AddGeometryAttributes_management(polys, "AREA", "METERS", "SQUARE_METERS")
+    
     with arcpy.da.UpdateCursor(temp + "wildLandPoly.shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
         for row in cursor:
             if (row[0] > 5000 and str(row[1]) == "1"):
@@ -149,20 +165,28 @@ def findWildlandAreas(map_name):
             else:
                 row[2] = 0
             cursor.updateRow(row)
+    
     arcpy.PolygonToRaster_conversion(polys, "value",temp + "wildlandAreas.tif")
+    
     ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
     arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
+    
     arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
     buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys", "2400 meters", "FULL", "ROUND", "ALL")
+    
     arcpy.AddField_management(temp + "bufferPolys.shp", "value", "SHORT")
+    
     with arcpy.da.UpdateCursor(temp + "bufferPolys.shp", ["id", "value"]) as cursor:
         for row in cursor:
             row[1] = 1
             cursor.updateRow(row)
+    
     arcpy.PolygonToRaster_conversion(temp + "bufferPolys.shp", "value", temp + "farcover")
+    
     farcover = temp + "farcover"
     outcon = Con(IsNull(farcover), 0, temp + "farcover")
     outcon.save(temp + "wildveg_buffer.tif")
+    
     print(f"{map_name}: Wildland areas completed.")
 
 
@@ -244,6 +268,10 @@ def createMaps(map_name, buffer):
         curr_address_points = address_points + "Flathead_2020_address_points.shp"
         curr_nlcd = nlcd_projected_clipped + "nlcd_flathead.tif"
         curr_study_area = study_areas + "FlatheadCounty.shp"
+    elif (map_name == "Ketchpaw Source Flathead"):
+        curr_address_points = address_points + "Flathead_2020_address_points.shp"
+        curr_nlcd = nlcd_projected_clipped + "nlcd_kp_pc2.tif"
+        curr_study_area = study_areas + "FlatheadCounty.shp"
     else:
         print(f"Cannot create {map_name}, no data specified.")
         return
@@ -251,15 +279,14 @@ def createMaps(map_name, buffer):
 
     # data and directory prep
     clearTempDirectory()
-    checkProjections(map_name)
+    checkProjections(map_name, curr_nlcd, curr_address_points, curr_study_area)
 
     # generate centroids, water, and wildland areas - run for each year
-    waterRaster(map_name, curr_nlcd, curr_address_points, curr_study_area)
+    waterRaster(map_name, curr_nlcd)
     addValue1(map_name, curr_address_points)
     wildlandBaseRaster(map_name, curr_nlcd)
     footprintCentroids(map_name, curr_address_points)
     findWildlandAreas(map_name)
-    footprintCentroids(map_name, curr_nlcd)
 
     # calculate WUI - run for each year and neighborhood buffer size
     makeNeighborhoods(map_name, buffer)
@@ -274,7 +301,7 @@ def createMaps(map_name, buffer):
 #############################################################################################################
 if __name__ == "__main__":
 
-    curr_map = "Ketchpaw Flathead"
+    curr_map = "Ketchpaw Source Flathead"
     curr_buffer = 500
 
     try:
