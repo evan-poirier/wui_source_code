@@ -13,6 +13,8 @@ import os
 import shutil
 import sys, string 
 import arcpy
+import gc
+import glob
 from arcpy import env
 from arcpy.sa import *
 
@@ -21,11 +23,11 @@ from arcpy.sa import *
 #############################################################################################################
 arcpy.CheckOutExtension("Spatial")                                          # Check out ArcGIS Spatial Analyst extension license
 arcpy.env.addOutputsToMap = False                                           # Don't let script add layers to map
+arcpy.env.cellSize = 30                                                     # Set default raster cell size to 30m
 env.overwriteOutput = True                                                  # Allow files to be overwritten
 projection_factory_code = 6514                                              # Factory code for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
 NAD_1983_2011_SP_Montana = arcpy.SpatialReference(projection_factory_code)  # Spatial reference object for the NAD 1983 (2011) StatePlane Montana FIPS 2500 (Meters) projection
 env.workspace = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping"         # Make sure all input files are in this folder
-arcpy.env.cellSize = 30                                                     # Set default raster cell size to 30m
 
 
 # Paths
@@ -81,28 +83,24 @@ def projectNLCDRaster():
         vertical="NO_VERTICAL"
     )
 
-
-# Data preparation functions
-#############################################################################################################
 def clipNLCD(map_name, curr_nlcd, study_area):
     clipped_NLCD_raster = ExtractByMask(curr_nlcd, study_area)
     clipped_NLCD_raster.save(nlcd_projected_clipped + "nlcd_" + str(map_name) + "_pc.tif")
     print(f"{map_name}: NLCD raster clipping completed.")
 
 
+# Data preparation functions
+#############################################################################################################
 def clearTempDirectory():
     print("Clearing temp directory.")
-    for filename in os.listdir(temp):
-        curr_file = os.path.join(temp, filename)
-        try:
-            if os.path.isfile(curr_file) or os.path.islink(curr_file):
-                os.remove(curr_file)
-            elif os.path.isdir(curr_file):
-                shutil.rmtree(curr_file)
-            print(f"Deleted: {curr_file}")
-        except Exception as e:
-            print(f"Failed to delete {curr_file}: {e}")
 
+    gc.collect()
+    arcpy.ClearWorkspaceCache_management()
+
+    if os.path.exists(temp):
+        shutil.rmtree(temp)
+    os.makedirs(temp)
+    
 
 # Make sure that NLCD raster, boundary, and house polygons/points are using the desired projection
 def checkProjections(map_name, curr_nlcd, curr_address_points, curr_study_area):
@@ -133,6 +131,7 @@ def addValue1(map_name, curr_address_points):
         for row in cursor:
             row[0] = 1
             cursor.updateRow(row)
+    del cursor
     print("\tSet value1 = 1 for all rows in housing shapefile.")
 
 
@@ -153,24 +152,30 @@ def wildlandBaseRaster(map_name, curr_nlcd):
 def findWildlandAreas(map_name):
     
     inRas = temp + "wildveg.tif"
-    polys = arcpy.RasterToPolygon_conversion(inRas, temp + "wildLandPoly" + map_name, "NO_SIMPLIFY", "Value")
-    
-    polys2 = polys
+    if arcpy.Exists(temp + "wildLandPoly.shp"):
+        arcpy.Delete_management(temp + "wildLandPoly.shp")
+    print("here")
+    polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly.shp", "NO_SIMPLIFY", "Value")
+    print("here")
+
     arcpy.AddField_management(polys, "value", "SHORT")
     
     arcpy.AddGeometryAttributes_management(polys, "AREA", "METERS", "SQUARE_METERS")
     
-    with arcpy.da.UpdateCursor(temp + "wildLandPoly" + map_name + ".shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
+    with arcpy.da.UpdateCursor(temp + "wildLandPoly.shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
         for row in cursor:
             if (row[0] > 5000 and str(row[1]) == "1"):
                 row[2] = 1
             else:
                 row[2] = 0
-            cursor.updateRow(row)
+            cursor.updateRow(row) 
+    del cursor
     
+    if arcpy.Exists(temp + "wildlandAreas.shp"):
+        arcpy.Delete_management(temp + "wildlandAreas.shp")
     arcpy.PolygonToRaster_conversion(polys, "value",temp + "wildlandAreas.tif")
     
-    ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
+    ftLayer = arcpy.MakeFeatureLayer_management(polys, temp + "polys2Feat")
     arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
     
     arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
@@ -182,7 +187,10 @@ def findWildlandAreas(map_name):
         for row in cursor:
             row[1] = 1
             cursor.updateRow(row)
+    del cursor
     
+    if arcpy.Exists(temp + "bufferPolys.shp"):
+        arcpy.Delete_management(temp + "bufferPolys.shp")
     arcpy.PolygonToRaster_conversion(temp + "bufferPolys.shp", "value", temp + "farcover")
     
     farcover = temp + "farcover"
@@ -190,6 +198,7 @@ def findWildlandAreas(map_name):
     outcon.save(temp + "wildveg_buffer.tif")
 
     del polys
+    del ftLayer
     
     print(f"{map_name}: Wildland areas completed.")
 
@@ -243,33 +252,26 @@ def calcWildlandCover(map_name, buffer):
    
 
 def calcWUI(map_name, buffer, curr_study_area):
-    # calculate intermix
     IMWui = Con((Raster(temp+"denNoWater" + str(buffer) + ".tif") == 1) & (Raster(temp + "wildcover50_" + str(buffer) + ".tif") == 1), 1 , 0)
-    # save intermix
     arcpy.management.CopyRaster(
         IMWui,
-        output + map_name[:10] + "_im.tif",
-        pixel_type="8_BIT_UNSIGNED",
+        output + map_name + "_imwui" + str(buffer) + ".tif",
+        pixel_type="8_BIT_UNSIGNED",      # May need to change this
         nodata_value="0",
         format="TIFF"
     )
-    # calculate interface
     IFWui = Raster(temp+"denNoWater" + str(buffer) + ".tif") * Raster(temp + "wildveg_buffer.tif")
-    # save interface
-    IFWui.save(output + map_name[:10] + "_if.tif")
-    # calculate overall map
+    IFWui.save(output + map_name + "_ifwui" + str(buffer) + ".tif")
     Wui = Con(IMWui == 1, 1, Con(IFWui == 1, 2 , 0))
-    # save overall map raster
     arcpy.management.CopyRaster(
         Wui,
-        output + map_name[:10] + ".tif",
-        pixel_type="8_BIT_UNSIGNED",
+        output + map_name + "_wui_map_" + str(buffer) + ".tif",
+        pixel_type="8_BIT_UNSIGNED",      # May need to change this
         nodata_value="0",
         format="TIFF"
     )
-    # save overall map as polygons
-    arcpy.RasterToPolygon_conversion(output + map_name[:10] + ".tif", temp + "wui_polig_" + str(buffer) + ".shp", "NO_SIMPLIFY", "VALUE")
-    arcpy.Clip_analysis(temp + "wui_polig_" + str(buffer) + ".shp", curr_study_area, output + map_name[:10] + "_p.shp")
+    arcpy.RasterToPolygon_conversion(output + map_name + "_wui_map_" + str(buffer) + ".tif", temp + map_name + "_wui_polig_" + str(buffer) + ".shp", "NO_SIMPLIFY", "VALUE")
+    arcpy.Clip_analysis(temp + map_name + "_wui_polig_" + str(buffer)+".shp", curr_study_area, output + map_name + "_wui_polig_" + str(buffer) + ".shp")
     print (f"{map_name}: WUI map at " + str(buffer) + "m neighborhood buffer size completed.")
 
 
@@ -282,18 +284,17 @@ def createMaps(map_name, buffer):
     elif (map_name == "Ketchpaw Source Flathead"):
         curr_address_points = address_points + "Flathead_2020_address_points.shp"
         curr_nlcd = nlcd_projected_clipped + "nlcd_kp_pc2.tif"
-        curr_study_area = study_areas + "FlatheadCounty.shp"
+        curr_study_area = study_areas + "FlatheadCounty.shp"      
     else:
         curr_address_points = address_points + map_name + "_address_points.shp"
-        curr_unclipped_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
-        curr_nlcd = nlcd_projected_clipped + "nlcd_" + map_name + "_pc.tif"
-        curr_study_area = study_areas + "FlatheadCounty.shp"
+        curr_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
+        curr_study_area = study_areas + "StateofMontanaBuffered.shp"
     print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
     # data and directory prep
     clearTempDirectory()
-    checkProjections(map_name, curr_unclipped_nlcd, curr_address_points, curr_study_area)
-    clipNLCD(map_name, curr_unclipped_nlcd, curr_study_area)
+    checkProjections(map_name, curr_nlcd, curr_address_points, curr_study_area)
+    clipNLCD(map_name, curr_nlcd, curr_study_area)
 
     # generate centroids, water, and wildland areas - run for each year
     waterRaster(map_name, curr_nlcd)
@@ -310,18 +311,26 @@ def createMaps(map_name, buffer):
     calcWildlandCover(map_name, buffer)
     calcWUI(map_name, buffer, curr_study_area)
 
+def release_arcpy_locks():
+    try:
+        arcpy.ClearWorkspaceCache_management()
+        gc.collect()
+    except Exception as e:
+        print(f"Error during lock cleanup: {e}")
 
 # Main
 #############################################################################################################
 if __name__ == "__main__":
 
-    curr_maps = []
-    for year in range(2012, 2025):
-        curr_maps.append(str(year))
+    maps_to_create = ["Ketchpaw Source Flathead", "Ketchpaw Flathead"]
+    # for year in range(2012, 2025):
+    #     maps_to_create.append(str(year))
+
     curr_buffer = 500
 
-    for curr_map in curr_maps:
+    for curr_map in maps_to_create:
         try:
             createMaps(curr_map, curr_buffer)
         except Exception as e:
             print(f"An error occurred while creating {curr_map} at {curr_buffer}m buffer distance: {e}")
+        release_arcpy_locks()
