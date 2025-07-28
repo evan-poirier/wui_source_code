@@ -287,13 +287,14 @@ def createMaps(map_name, buffer):
         curr_address_points = address_points + map_name + "_address_points.shp"
         curr_unclipped_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
         curr_nlcd = nlcd_projected_clipped + "nlcd_" + map_name + "_pc.tif"
-        curr_study_area = study_areas + "FlatheadCounty.shp"
+        curr_study_area = study_areas + "StateofMontanaBuffered.shp"
     print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
     # data and directory prep
     clearTempDirectory()
-    checkProjections(map_name, curr_unclipped_nlcd, curr_address_points, curr_study_area)
-    clipNLCD(map_name, curr_unclipped_nlcd, curr_study_area)
+    if (map_name != "Ketchpaw Flathead" and map_name != "Ketchpaw Source Flathead"):
+        checkProjections(map_name, curr_unclipped_nlcd, curr_address_points, curr_study_area)
+        clipNLCD(map_name, curr_unclipped_nlcd, curr_study_area)
 
     # generate centroids, water, and wildland areas - run for each year
     waterRaster(map_name, curr_nlcd)
