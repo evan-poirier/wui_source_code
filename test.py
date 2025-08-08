@@ -154,29 +154,31 @@ def wildlandBaseRaster(map_name, curr_nlcd):
  
 def findWildlandAreas(map_name):
     
-    inRas = temp + "wildveg.tif"
-    polys = arcpy.RasterToPolygon_conversion(inRas, temp + "wildLandPoly" + map_name, "NO_SIMPLIFY", "Value")
+    # inRas = temp + "wildveg.tif"
+    # polys = arcpy.RasterToPolygon_conversion(inRas, temp + "wildLandPoly" + map_name, "NO_SIMPLIFY", "Value")
     
-    polys2 = polys
-    arcpy.AddField_management(polys, "value", "SHORT")
+    # polys2 = polys
+    # arcpy.AddField_management(polys, "value", "SHORT")
     
-    arcpy.AddGeometryAttributes_management(polys, "AREA", "METERS", "SQUARE_METERS")
+    # arcpy.AddGeometryAttributes_management(polys, "AREA", "METERS", "SQUARE_METERS")
     
-    with arcpy.da.UpdateCursor(temp + "wildLandPoly" + map_name + ".shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
-        for row in cursor:
-            if (row[0] > 5000 and str(row[1]) == "1"):
-                row[2] = 1
-            else:
-                row[2] = 0
-            cursor.updateRow(row)
+    # with arcpy.da.UpdateCursor(temp + "wildLandPoly" + map_name + ".shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
+    #     for row in cursor:
+    #         if (row[0] > 5000 and str(row[1]) == "1"):
+    #             row[2] = 1
+    #         else:
+    #             row[2] = 0
+    #         cursor.updateRow(row)
     
-    arcpy.PolygonToRaster_conversion(polys, "value",temp + "wildlandAreas.tif")
+    # arcpy.PolygonToRaster_conversion(polys, "value",temp + "wildlandAreas.tif")
     
-    ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
-    arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
+    # ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
+    # arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
     
-    arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
-    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys.shp", "2400 meters", "FULL", "ROUND", "ALL")
+    # arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
+    print("here")
+    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys.shp", "2400 meters")
+    print("here")
     
     arcpy.AddField_management(temp + "bufferPolys.shp", "value", "SHORT")
     
@@ -278,33 +280,24 @@ def calcWUI(map_name, buffer, curr_study_area):
 
 
 def createMaps(map_name, buffer):
-    # define housing polygons and vegetation raster
-    if (map_name == "Ketchpaw Flathead"):
-        curr_address_points = address_points + "Flathead_2020_address_points.shp"
-        curr_nlcd = nlcd_projected_clipped + "nlcd_flathead.tif"
-        curr_study_area = study_areas + "FlatheadCounty.shp"
-    elif (map_name == "Ketchpaw Source Flathead"):
-        curr_address_points = address_points + "Flathead_2020_address_points.shp"
-        curr_nlcd = nlcd_projected_clipped + "nlcd_kp_pc2.tif"
-        curr_study_area = study_areas + "FlatheadCounty.shp"
-    else:
-        curr_address_points = address_points + map_name + "_address_points.shp"
-        curr_unclipped_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
-        curr_nlcd = nlcd_projected_clipped + "nlcd_" + map_name + "_pc.tif"
-        curr_study_area = study_areas + "StateofMontanaBuffered.shp"
+    curr_address_points = address_points + map_name + "_address_points.shp"
+    curr_unclipped_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
+    curr_nlcd = nlcd_projected_clipped + "nlcd_" + map_name + "_pc.tif"
+    curr_study_area = study_areas + "StateofMontanaBuffered.shp"
+
     print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
-    # data and directory prep
-    clearTempDirectory()
-    if (map_name != "Ketchpaw Flathead" and map_name != "Ketchpaw Source Flathead"):
-        checkProjections(map_name, curr_unclipped_nlcd, curr_address_points, curr_study_area)
-        clipNLCD(map_name, curr_unclipped_nlcd, curr_study_area)
+    # # data and directory prep
+    # clearTempDirectory()
+    # if (map_name != "Ketchpaw Flathead" and map_name != "Ketchpaw Source Flathead"):
+    #     checkProjections(map_name, curr_unclipped_nlcd, curr_address_points, curr_study_area)
+    #     clipNLCD(map_name, curr_unclipped_nlcd, curr_study_area)
 
     # generate centroids, water, and wildland areas - run for each year
-    waterRaster(map_name, curr_nlcd)
-    addValue1(map_name, curr_address_points)
-    wildlandBaseRaster(map_name, curr_nlcd)
-    footprintCentroids(map_name, curr_address_points)
+    # waterRaster(map_name, curr_nlcd)
+    # addValue1(map_name, curr_address_points)
+    # wildlandBaseRaster(map_name, curr_nlcd)
+    # footprintCentroids(map_name, curr_address_points)
     findWildlandAreas(map_name)
 
     # calculate WUI - run for each year and neighborhood buffer size
