@@ -153,7 +153,6 @@ def wildlandBaseRaster(map_name, curr_nlcd):
 
  
 def findWildlandAreas(map_name):
-    
     inRas = temp + "wildveg.tif"
     polys = arcpy.RasterToPolygon_conversion(inRas, temp + "wildLandPoly" + map_name, "NO_SIMPLIFY", "Value")
     
@@ -175,8 +174,13 @@ def findWildlandAreas(map_name):
     ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
     arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
     
-    arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
-    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys.shp", "2400 meters", "FULL", "ROUND", "ALL")
+    arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer.shp")
+
+    # this is the line where there was an error "ERROR 002836: An error occurred during the buffer operation. Failed to execute (Buffer)."
+    # fixed by first creating non-dissolved layer (last param = "NONE"), then dissolving seperately
+    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferNoDissolve.shp", "2400 meters", "FULL", "ROUND", "NONE")
+    arcpy.Dissolve_management(temp + "bufferNoDissolve.shp", temp + "bufferPolys.shp")
+
     
     arcpy.AddField_management(temp + "bufferPolys.shp", "value", "SHORT")
     
@@ -190,10 +194,6 @@ def findWildlandAreas(map_name):
     farcover = temp + "farcover"
     outcon = Con(IsNull(farcover), 0, temp + "farcover")
     outcon.save(temp + "wildveg_buffer.tif")
-
-    del polys
-    del polys2
-    del ftLayer
     
     print(f"{map_name}: Wildland areas completed.")
 
@@ -278,7 +278,7 @@ def calcWUI(map_name, buffer, curr_study_area):
 
 
 def createMaps(map_name, buffer):
-    # define housing polygons and vegetation raster
+    # decide which source data to use
     if (map_name == "Ketchpaw Flathead"):
         curr_address_points = address_points + "Flathead_2020_address_points.shp"
         curr_nlcd = nlcd_projected_clipped + "nlcd_flathead.tif"
@@ -292,6 +292,7 @@ def createMaps(map_name, buffer):
         curr_unclipped_nlcd = nlcd_projected + "nlcd_" + map_name + "_p.tif"
         curr_nlcd = nlcd_projected_clipped + "nlcd_" + map_name + "_pc.tif"
         curr_study_area = study_areas + "StateofMontanaBuffered.shp"
+
     print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
     # data and directory prep
@@ -320,7 +321,7 @@ def createMaps(map_name, buffer):
 #############################################################################################################
 if __name__ == "__main__":
 
-    curr_maps = [str(2016)]
+    curr_maps = range(2012, 2025)
     curr_buffer = 500
 
     for curr_map in curr_maps:

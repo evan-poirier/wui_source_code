@@ -149,30 +149,30 @@ def wildlandBaseRaster(map_name, curr_nlcd):
 
  
 def findWildlandAreas(map_name):
-    
     inRas = temp + "wildveg.tif"
-    polys = arcpy.RasterToPolygon_conversion(inRas,temp + "wildLandPoly", "NO_SIMPLIFY", "Value")
+    polys = arcpy.RasterToPolygon_conversion(inRas, temp + "wildLandPoly" + map_name, "NO_SIMPLIFY", "Value")
     
     polys2 = polys
     arcpy.AddField_management(polys, "value", "SHORT")
     
     arcpy.AddGeometryAttributes_management(polys, "AREA", "METERS", "SQUARE_METERS")
     
-    with arcpy.da.UpdateCursor(temp + "wildLandPoly.shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
+    with arcpy.da.UpdateCursor(temp + "wildLandPoly" + map_name + ".shp", ["POLY_AREA", "gridcode", "value"]) as cursor:
         for row in cursor:
             if (row[0] > 5000 and str(row[1]) == "1"):
                 row[2] = 1
             else:
                 row[2] = 0
             cursor.updateRow(row)
-    
+
     arcpy.PolygonToRaster_conversion(polys, "value",temp + "wildlandAreas.tif")
     
     ftLayer = arcpy.MakeFeatureLayer_management(polys2, temp + "polys2Feat")
     arcpy.SelectLayerByAttribute_management(ftLayer, "NEW_SELECTION", 'POLY_AREA > 25000000 AND gridcode = 1')
     
-    arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer")
-    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys", "2400 meters", "FULL", "ROUND", "ALL")
+    arcpy.CopyFeatures_management(ftLayer, temp + "preBuffer.shp")
+
+    buffPolys = arcpy.Buffer_analysis(temp + "preBuffer.shp", temp + "bufferPolys.shp", "2400 meters", "FULL", "ROUND", "ALL")
     
     arcpy.AddField_management(temp + "bufferPolys.shp", "value", "SHORT")
     
@@ -186,6 +186,10 @@ def findWildlandAreas(map_name):
     farcover = temp + "farcover"
     outcon = Con(IsNull(farcover), 0, temp + "farcover")
     outcon.save(temp + "wildveg_buffer.tif")
+
+    del polys
+    del polys2
+    del ftLayer
     
     print(f"{map_name}: Wildland areas completed.")
 
@@ -278,14 +282,14 @@ def createMaps(map_name, buffer):
     print(f"Creating map {map_name} using NLCD raster '{curr_nlcd}' and address points '{curr_address_points}'.")
 
     # data and directory prep
-    clearTempDirectory()
-    checkProjections(map_name, curr_nlcd, curr_address_points, curr_study_area)
+    # clearTempDirectory()
+    # checkProjections(map_name, curr_nlcd, curr_address_points, curr_study_area)
 
-    # generate centroids, water, and wildland areas - run for each year
-    waterRaster(map_name, curr_nlcd)
-    addValue1(map_name, curr_address_points)
-    wildlandBaseRaster(map_name, curr_nlcd)
-    footprintCentroids(map_name, curr_address_points)
+    # # generate centroids, water, and wildland areas - run for each year
+    # waterRaster(map_name, curr_nlcd)
+    # addValue1(map_name, curr_address_points)
+    # wildlandBaseRaster(map_name, curr_nlcd)
+    # footprintCentroids(map_name, curr_address_points)
     findWildlandAreas(map_name)
 
     # calculate WUI - run for each year and neighborhood buffer size
