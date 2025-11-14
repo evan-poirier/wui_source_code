@@ -38,14 +38,14 @@ space = "C:\\Users\\Cheryl\\Documents\\montana_wui_mapping\\"     # Make sure al
 counties = space + "data\\prepared\\counties\\County.shp"
 
 # year over year tabular
-yoy_data = space + "analysis\\county_analysis_tabular\\YOY_WUI.csv"
+yoy_data = space + "analysis\\tabular\\YOY_WUI.csv"
 
 # YOY WUI maps output
 output_dir = space + "analysis\\yoy_wui_maps\\"
 
 
 
-# Previously used functions
+# Utilities
 #############################################################################################################
 def createMaps(curr_map):
     curr_tbl_name = str(curr_map) + "_tbl"
